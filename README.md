@@ -1,6 +1,6 @@
-# Viam Boat Monitoring Unit
+# RPI-CM4 Based Boat Monitoring Unit
 
-The **Viam Boat Monitoring Unit** is a custom device based on the Raspberry Pi Compute Module 4 (RPI CM4), designed to monitor and control various hardware interfaces. This unit integrates functionalities like CAN bus, I2C, LEDs, RTC (Real-Time Clock), Wi-Fi, and Ethernet. The repository provides a collection of setup and test scripts to configure and validate these hardware interfaces.
+The **Boat Monitoring Unit** is a custom device based on the Raspberry Pi Compute Module 4 (RPI CM4), designed to monitor and control various hardware interfaces. This unit integrates functionalities like CAN bus, I2C, LEDs, RTC (Real-Time Clock), Wi-Fi, and Ethernet. The repository provides a collection of setup and test scripts to configure and validate these hardware interfaces.
 
 These scripts were developed to automate QA testing on 250 units developed by **QuireTech LLC**.
 
