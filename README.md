@@ -6,6 +6,16 @@ These scripts were developed to automate QA testing on 250 units developed by **
 
 The scripts included in this repository allow for enabling and testing the following functionalities:
 
+## BG95/EG95 (LTE, GNSS, SMS, MQTT)
+`Quectel_xG9x_Hayes/` has python scripts that send AT commands per script requirements. 
+Examples:
+- Configure and set-up SIM to a network operator
+- Configure and set-up system for MQTT (pub/sub) using Mosquitto broker
+- Configure and set-up system for GNSS, get location data and parse using `Quectel_xG9x_Hayes/GNSS/parse_gpsloc.py` which gives a Google Maps pin location
+- ....
+
+
+
 ## CAN Bus
 
 - Ensures the `spi=on` parameter is set in the `/boot/firmware/config.txt` file.
