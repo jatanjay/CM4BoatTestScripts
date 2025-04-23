@@ -37,3 +37,18 @@ echo "\033[1;32mDone!\033[0m"
 
 echo ""
 echo ""
+
+# test can gps
+echo "\033[1;33m Testing CAN w/ GPS\033[0m"
+sh test_scripts/can_gps_test.sh
+echo "\033[1;32mDone!\033[0m"
+
+echo ""
+echo ""
+
+# test eth
+echo "\033[1;33m Testing Ethernet (eth1, eth2) \033[0m"
+sh test_scripts/test_eth.sh
+echo "\033[1;32mDone!\033[0m"
+
+

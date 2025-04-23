@@ -20,4 +20,4 @@ echo "\033[1;32mDone!\033[0m"
 
 # Reboot the system to apply all changes
 echo "\033[1;33m  Rebooting the system to apply all changes\033[0m -----------"
-sh reboot_rpi.sh
+#sh reboot_rpi.sh
