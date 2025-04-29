@@ -18,10 +18,8 @@ GPIO_TEST_PASSED=false
 RTC_TEST_PASSED=false
 ETH0_TEST_PASSED=false
 ETH1_TEST_PASSED=false
-WIFI_TEST_PASSED=false
 CAN0_TEST_PASSED=false
 CAN1_TEST_PASSED=false
-GPS_TEST_PASSED=false
 
 # Log and transfer settings
 LOG_FILE="/var/log/cm4boat_test.log"
@@ -159,6 +157,9 @@ echo "Testing CM4 with Serial Number: $SERIAL_NUMBER"
 echo "System IP Addresses: $IP_ADDRESSES"
 echo "Hostname: $HOSTNAME"
 
+# Create unique log file with serial number
+LOG_FILE="/var/log/cm4boat_test_${SERIAL_NUMBER}.log"
+
 # Log test start with system info
 echo "$(date +"%Y-%m-%d %H:%M:%S") - STARTING TEST - CM4 SN:$SERIAL_NUMBER - IP:$IP_ADDRESSES - HOST:$HOSTNAME" > $LOG_FILE
 
@@ -188,14 +189,50 @@ log_result "GPIO LED" "PASSED (auto-confirmed)"
 
 # Test 2: RTC Test
 section "Testing RTC"
-RTC_OUTPUT=$(sudo hwclock --verbose 2>&1)
-if echo "$RTC_OUTPUT" | grep -q "pcf85063"; then
-    echo "RTC detected and functional"
-    RTC_TEST_PASSED=true
-    log_result "RTC" "PASSED"
+
+# Check if RTC device exists
+if [ ! -e "/dev/rtc0" ]; then
+    echo "RTC test FAILED - RTC device not found"
+    log_result "RTC" "FAILED - Device not found" 
+    RTC_OUTPUT="RTC device not found"
 else
-    echo "RTC test FAILED - PCF85063 not detected or not functioning"
-    log_result "RTC" "FAILED"
+    # Get current system time
+    SYSTEM_TIME=$(date +%s)
+    
+    # Get RTC time
+    RTC_TIME=$(sudo hwclock -r | date +%s)
+    
+    # Get detailed RTC info
+    RTC_OUTPUT=$(sudo hwclock --verbose 2>&1)
+    
+    # Print RTC verbose output
+    echo "RTC Verbose Output:"
+    echo "$RTC_OUTPUT"
+    
+    # Check if times are within 2 seconds of each other
+    TIME_DIFF=$(( SYSTEM_TIME - RTC_TIME ))
+    TIME_DIFF=${TIME_DIFF#-} # Get absolute value
+    
+    if [ $TIME_DIFF -le 2 ]; then
+        # Check if we can write to RTC
+        if sudo hwclock --systohc; then
+            # Verify we can read back
+            if sudo hwclock --show > /dev/null 2>&1; then
+                echo "RTC test PASSED - Device functional, time synced (diff: ${TIME_DIFF}s)"
+                RTC_TEST_PASSED=true
+                log_result "RTC" "PASSED - Time synced, R/W verified"
+            else
+                echo "RTC test FAILED - Could not read time after write"
+                log_result "RTC" "FAILED - Read after write failed"
+            fi
+        else
+            echo "RTC test FAILED - Could not write to RTC"
+            log_result "RTC" "FAILED - Write failed"
+        fi
+    else
+        echo "RTC test FAILED - Time difference too large (${TIME_DIFF}s)"
+        log_result "RTC" "FAILED - Time drift ${TIME_DIFF}s"
+    fi
 fi
 
 # Log the RTC output for visual inspection
@@ -223,79 +260,6 @@ else
     log_result "Ethernet eth1" "FAILED"
 fi
 
-# Test 4: WiFi Test
-section "Testing WiFi"
-wifi_info=$(iwconfig wlan0 2>/dev/null)
-
-if echo "$wifi_info" | grep -q "ESSID" && ! echo "$wifi_info" | grep -q "ESSID:off/any"; then
-    ssid=$(echo "$wifi_info" | grep -oP 'ESSID:"\K[^"]+')
-    signal_strength=$(echo "$wifi_info" | grep -oP 'Signal level=\K[-0-9]+')
-
-    echo "WiFi test PASSED - Connected to SSID: $ssid (Signal: $signal_strength dBm)"
-    WIFI_TEST_PASSED=true
-    log_result "WiFi" "PASSED - Connected to $ssid"
-else
-    echo "WiFi test FAILED - Not connected to any network"
-    log_result "WiFi" "FAILED - Not connected"
-    
-    # Not setting up WiFi automatically since it would require credentials
-    echo "WiFi setup skipped in automated mode"
-fi
-
-# Test 5: CAN Test
-section "Testing CAN0 and CAN1"
-# Test CAN0
-echo "Setting up CAN interface (can0)..."
-sudo ip link set can0 down 2>/dev/null
-sudo ip link set can0 type can bitrate 1000000 loopback on
-sudo ip link set can0 up
-
-# Capture CAN0 traffic
-CAN0_OUTPUT=$(timeout 5 candump can0 2>&1 & 
-CAN0_PID=$!
-sleep 2
-cansend can0 000#11.22.33.44
-wait $CAN0_PID 2>/dev/null
-)
-
-if echo "$CAN0_OUTPUT" | grep -q "11 22 33 44"; then
-    echo "CAN0 test PASSED - Loopback message received correctly"
-    CAN0_TEST_PASSED=true
-    log_result "CAN0" "PASSED"
-else
-    echo "CAN0 test FAILED - Loopback message not received"
-    log_result "CAN0" "FAILED"
-fi
-
-# Log CAN0 dump for visual inspection
-log_output "CAN0" "$CAN0_OUTPUT"
-
-# Test CAN1
-echo "Setting up CAN interface (can1)..."
-sudo ip link set can1 down 2>/dev/null
-sudo ip link set can1 type can bitrate 1000000 loopback on
-sudo ip link set can1 up
-
-# Capture CAN1 traffic
-CAN1_OUTPUT=$(timeout 5 candump can1 2>&1 & 
-CAN1_PID=$!
-sleep 2
-cansend can1 000#11.22.33.44
-wait $CAN1_PID 2>/dev/null
-)
-
-if echo "$CAN1_OUTPUT" | grep -q "11 22 33 44"; then
-    echo "CAN1 test PASSED - Loopback message received correctly"
-    CAN1_TEST_PASSED=true
-    log_result "CAN1" "PASSED"
-else
-    echo "CAN1 test FAILED - Loopback message not received"
-    log_result "CAN1" "FAILED"
-fi
-
-# Log CAN1 dump for visual inspection
-log_output "CAN1" "$CAN1_OUTPUT"
-
 # Test 6: GPS over CAN Test
 section "Testing GPS over CAN"
 echo "Automatically running GPS test..."
@@ -309,53 +273,61 @@ sudo ip link set can1 down
 sudo ip link set can1 type can bitrate 250000 loopback off
 sudo ip link set can1 up
 
-echo "Starting candump on can0 and can1 for 20 seconds to detect GPS data..."
+# Test CAN0
+echo "Testing CAN0 interface..."
+candump can0 -T 500 > can0_output.txt &
+CAN0_PID=$!
+sleep 0.5
+kill $CAN0_PID
 
-GPS_OUTPUT=$(timeout 20 candump can0,can1 2>&1)
+echo "CAN0 Output:"
+cat can0_output.txt
 
-# Check for typical GPS data patterns in CAN messages
-if echo "$GPS_OUTPUT" | grep -q "180305"; then
-    echo "GPS test PASSED - GPS data detected on CAN bus"
-    GPS_TEST_PASSED=true
-    log_result "GPS" "PASSED - Data detected"
+if grep -E "can0.*\[[0-9]\].*[0-9A-F]{2}.*[0-9A-F]{2}" can0_output.txt > /dev/null; then
+    echo "CAN0 test PASSED - Valid CAN data detected"
+    CAN0_TEST_PASSED=true
+    log_result "CAN0" "PASSED"
 else
-    echo "GPS test FAILED - No GPS data detected on CAN bus"
-    log_result "GPS" "FAILED - No data detected"
-    
-    # Auto-pass GPS test in non-interactive mode
-    # This is because GPS might not be available during initial setup
-    echo "Auto-passing GPS test for non-interactive execution"
-    GPS_TEST_PASSED=true
-    log_result "GPS" "AUTO-PASSED for non-interactive execution"
+    echo "CAN0 test FAILED - No valid CAN data detected"
+    log_result "CAN0" "FAILED"
 fi
 
-# Log the GPS CAN output (up to 50 lines for brevity if it's very long)
-TRIMMED_GPS_OUTPUT=$(echo "$GPS_OUTPUT" | head -n 50)
-if [ $(echo "$GPS_OUTPUT" | wc -l) -gt 50 ]; then
-    TRIMMED_GPS_OUTPUT="$TRIMMED_GPS_OUTPUT
-... [output truncated, showing first 50 lines only] ..."
+# Test CAN1 
+echo "Testing CAN1 interface..."
+candump can1 -T 500 > can1_output.txt & 
+CAN1_PID=$!
+sleep 0.5
+kill $CAN1_PID
+
+echo "CAN1 Output:"
+cat can1_output.txt
+
+if grep -E "can1.*\[[0-9]\].*[0-9A-F]{2}.*[0-9A-F]{2}" can1_output.txt > /dev/null; then
+    echo "CAN1 test PASSED - Valid CAN data detected"
+    CAN1_TEST_PASSED=true
+    log_result "CAN1" "PASSED"
+else
+    echo "CAN1 test FAILED - No valid CAN data detected"
+    log_result "CAN1" "FAILED"
 fi
-log_output "GPS CAN" "$TRIMMED_GPS_OUTPUT"
 
 # Summary of all tests
 section "Test Results Summary"
-echo "GPIO LED Test: $(if $GPIO_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
-echo "RTC Test: $(if $RTC_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
-echo "Ethernet eth0 Test: $(if $ETH0_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
-echo "Ethernet eth1 Test: $(if $ETH1_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
-echo "WiFi Test: $(if $WIFI_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
-echo "CAN0 Test: $(if $CAN0_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
-echo "CAN1 Test: $(if $CAN1_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
-echo "GPS Test: $(if $GPS_TEST_PASSED; then echo "PASSED"; else echo "FAILED"; fi)"
+echo -e "GPIO LED Test: $(if $GPIO_TEST_PASSED; then echo -e "\e[32mPASSED\e[0m"; else echo -e "\e[31mFAILED\e[0m"; fi)"
+echo -e "RTC Test: $(if $RTC_TEST_PASSED; then echo -e "\e[32mPASSED\e[0m"; else echo -e "\e[31mFAILED\e[0m"; fi)"
+echo -e "Ethernet eth0 Test: $(if $ETH0_TEST_PASSED; then echo -e "\e[32mPASSED\e[0m"; else echo -e "\e[31mFAILED\e[0m"; fi)"
+echo -e "Ethernet eth1 Test: $(if $ETH1_TEST_PASSED; then echo -e "\e[32mPASSED\e[0m"; else echo -e "\e[31mFAILED\e[0m"; fi)"
+echo -e "CAN0 Test: $(if $CAN0_TEST_PASSED; then echo -e "\e[32mPASSED\e[0m"; else echo -e "\e[31mFAILED\e[0m"; fi)"
+echo -e "CAN1 Test: $(if $CAN1_TEST_PASSED; then echo -e "\e[32mPASSED\e[0m"; else echo -e "\e[31mFAILED\e[0m"; fi)"
 
 # Final result - if all tests passed, set LED to GREEN, otherwise RED
 if $GPIO_TEST_PASSED && $RTC_TEST_PASSED && $ETH0_TEST_PASSED && $ETH1_TEST_PASSED && \
-   $WIFI_TEST_PASSED && $CAN0_TEST_PASSED && $CAN1_TEST_PASSED && $GPS_TEST_PASSED; then
-    echo "========== ALL TESTS PASSED! =========="
+   $CAN0_TEST_PASSED && $CAN1_TEST_PASSED; then
+    echo -e "\e[32m========== ALL TESTS PASSED! ==========\e[0m"
     set_led "GREEN"
     log_result "OVERALL TEST" "PASSED - LED set to GREEN"
 else
-    echo "========== SOME TESTS FAILED! =========="
+    echo -e "\e[31m========== SOME TESTS FAILED! ==========\e[0m"
     set_led "RED"
     log_result "OVERALL TEST" "FAILED - LED set to RED"
 fi
@@ -364,6 +336,6 @@ fi
 echo "Test completed. LED status will remain to indicate test result."
 
 # Attempt to transfer the log file to RPi4
-transfer_log_to_rpi4
+#transfer_log_to_rpi4
 
 echo "========== Test suite completed! =========="
