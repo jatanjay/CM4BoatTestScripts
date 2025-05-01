@@ -1,0 +1,170 @@
+# IP Scanner Script - Optimized Version
+# This script scans the local network in parallel and saves results to a text file
+
+# Function to test if a port is open (optimized)
+function Test-Port {
+    param (
+        [string]$computer,
+        [int]$port,
+        [int]$timeout = 1
+    )
+    $tcp = New-Object System.Net.Sockets.TcpClient
+    try {
+        $result = $tcp.BeginConnect($computer, $port, $null, $null)
+        $success = $result.AsyncWaitHandle.WaitOne($timeout, $true)
+        if ($success) {
+            return "Open"
+        }
+        return "Closed"
+    }
+    catch {
+        return "Closed"
+    }
+    finally {
+        $tcp.Close()
+    }
+}
+
+# Function to get MAC address (optimized)
+function Get-MACAddress {
+    param (
+        [string]$ip
+    )
+    try {
+        $arp = arp -a $ip
+        if ($arp -match '([0-9A-F]{2}(?:[:-][0-9A-F]{2}){5})') {
+            return $matches[0]
+        }
+        return "Unknown"
+    }
+    catch {
+        return "Unknown"
+    }
+}
+
+# Function to scan a single IP (optimized)
+function Scan-IP {
+    param (
+        [string]$ip,
+        [string]$networkPrefix
+    )
+    
+    # Test if host is up (using parallel ping)
+    $ping = Test-Connection -ComputerName $ip -Count 1 -Quiet -TimeoutSeconds 1
+    if ($ping) {
+        Write-Host "Found: $ip" -ForegroundColor Green
+        
+        # Get host information
+        $mac = Get-MACAddress -ip $ip
+        $hostname = try { [System.Net.Dns]::GetHostEntry($ip).HostName } catch { "Unknown" }
+        
+        # Test common ports in parallel
+        $ports = @{
+            HTTP = 80
+            HTTPS = 443
+            SMB = 445
+            RDP = 3389
+        }
+        
+        $portStatus = @{}
+        $portJobs = @()
+        
+        foreach ($port in $ports.GetEnumerator()) {
+            $portJobs += Start-Job -ScriptBlock {
+                param($ip, $port)
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                try {
+                    $result = $tcp.BeginConnect($ip, $port, $null, $null)
+                    $success = $result.AsyncWaitHandle.WaitOne(500, $true)
+                    if ($success) { return "Open" }
+                    return "Closed"
+                }
+                catch { return "Closed" }
+                finally { $tcp.Close() }
+            } -ArgumentList $ip, $port.Value
+        }
+        
+        # Wait for all port checks to complete
+        $portJobs | Wait-Job | Out-Null
+        $portIndex = 0
+        foreach ($port in $ports.GetEnumerator()) {
+            $portStatus[$port.Key] = $portJobs[$portIndex].ChildJobs[0].Output
+            $portIndex++
+        }
+        $portJobs | Remove-Job
+        
+        # Return results
+        return [PSCustomObject]@{
+            IPAddress = $ip
+            HostName = $hostname
+            MACAddress = $mac
+            HTTP = $portStatus.HTTP
+            HTTPS = $portStatus.HTTPS
+            SMB = $portStatus.SMB
+            RDP = $portStatus.RDP
+        }
+    }
+    return $null
+}
+
+# Main scanning function
+function Start-NetworkScan {
+    param (
+        [string]$networkPrefix
+    )
+    
+    Write-Host "Starting parallel network scan..."
+    Write-Host "Network prefix: $networkPrefix"
+    
+    # Create array to store results
+    $results = @()
+    $scanJobs = @()
+    
+    # Start parallel scans
+    for ($i = 1; $i -le 254; $i++) {
+        $ip = "$networkPrefix$i"
+        $scanJobs += Start-Job -ScriptBlock ${function:Scan-IP} -ArgumentList $ip, $networkPrefix
+    }
+    
+    # Wait for all scans to complete and collect results
+    $completed = 0
+    while ($scanJobs.Count -gt 0) {
+        $completedJobs = $scanJobs | Where-Object { $_.State -eq 'Completed' }
+        foreach ($job in $completedJobs) {
+            $result = Receive-Job $job
+            if ($result) {
+                $results += $result
+            }
+            $scanJobs = $scanJobs | Where-Object { $_ -ne $job }
+            $job | Remove-Job
+            $completed++
+            Write-Progress -Activity "Scanning Network" -Status "Progress" -PercentComplete (($completed / 254) * 100)
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    
+    return $results
+}
+
+# Get local network information
+$route = Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Select-Object -First 1
+$gateway = $route.NextHop
+$gatewayParts = $gateway -split '\.'
+$networkPrefix = (($gatewayParts[0..2] -join '.') + '.')
+
+# Start the scan
+$results = Start-NetworkScan -networkPrefix $networkPrefix
+
+# Save results to file
+$outputFile = "IP_Scan_Results.txt"
+$tableContent = "IP Address`tHost Name`tMAC Address`tHTTP`tHTTPS`tSMB`tRDP`n"
+$tableContent += "----------`t----------`t-----------`t----`t-----`t---`t---`n"
+
+foreach ($result in $results) {
+    $tableContent += "$($result.IPAddress)`t$($result.HostName)`t$($result.MACAddress)`t$($result.HTTP)`t$($result.HTTPS)`t$($result.SMB)`t$($result.RDP)`n"
+}
+
+$tableContent | Out-File -FilePath $outputFile -Encoding UTF8 -Force
+
+Write-Host "`nScan complete! Results saved to $outputFile"
+Write-Host "Found $($results.Count) active hosts" 
