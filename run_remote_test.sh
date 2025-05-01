@@ -12,12 +12,6 @@ USERNAME="viam"
 PASSWORD="checkmate"
 TEST_SCRIPT="./test/all_test.sh"
 
-# Check if sshpass is installed
-if ! command -v sshpass &> /dev/null; then
-    echo "sshpass is not installed. Installing..."
-    apt-get update
-    apt-get install -y sshpass
-fi
 
 echo "Copying test script to $IP_ADDRESS and running it..."
 echo "----------------------------------------"
