@@ -19,8 +19,14 @@ if ! command -v sshpass &> /dev/null; then
     apt-get install -y sshpass
 fi
 
-echo "Connecting to $IP_ADDRESS and running test script..."
+echo "Copying test script to $IP_ADDRESS and running it..."
 echo "----------------------------------------"
 
+# Copy the test script to remote device
+sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no "$TEST_SCRIPT" "$USERNAME@$IP_ADDRESS:/home/$USERNAME/"
+
+# Make the script executable on the remote device
+sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$USERNAME@$IP_ADDRESS" "chmod +x /home/$USERNAME/all_test.sh"
+
 # SSH into the device and run the test script
-sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$USERNAME@$IP_ADDRESS" "$TEST_SCRIPT" 
+sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$USERNAME@$IP_ADDRESS" "/home/$USERNAME/all_test.sh"
