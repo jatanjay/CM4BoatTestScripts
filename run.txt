@@ -1,0 +1,1 @@
+sudo sh run_remote_test.sh 192.168.0.181 && sudo sh run_remote_test.sh 192.168.0.188 && sudo sh run_remote_test.sh 192.168.0.233

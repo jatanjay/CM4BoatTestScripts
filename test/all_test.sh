@@ -140,6 +140,9 @@ fi
 section "Testing GPS over CAN"
 echo "Automatically running GPS test..."
 
+# Remove any existing CAN output files
+rm -f can0_output.txt can1_output.txt
+
 echo "Setting up CAN interfaces for GPS data..."
 sudo ip link set can0 down
 sudo ip link set can0 type can bitrate 250000 loopback off
