@@ -3,6 +3,11 @@
 # Author: Jatan Pandya / QuireTech LLC
 # Updated with comprehensive pass/fail tracking and non-interactive execution
 
+if ! dpkg -l | grep -q 'iperf3'; then
+  sudo apt-get update
+  sudo apt-get install -y iperf3
+fi
+
 # Function to stop candump processes
 cleanup() {
     echo "Stopping any running candump processes..."
@@ -20,6 +25,10 @@ ETH0_TEST_PASSED=false
 ETH1_TEST_PASSED=false
 CAN0_TEST_PASSED=false
 CAN1_TEST_PASSED=false
+
+
+IPERF_SERVER_IP="192.168.0.162" # WINDOWS IP ADDRESS WHERE IPERF SERVER IS RUNNING
+
 
 # Function to show section headers
 section() {
@@ -122,16 +131,38 @@ fi
 section "Testing Ethernet"
 # Check eth0
 if ip link show eth0 2>/dev/null | grep -q "state UP"; then
-    echo "eth0 is UP"
-    ETH0_TEST_PASSED=true
+    ETH0_IP=$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)
+    echo "eth0 is UP with IP: ${ETH0_IP:-No IP assigned}"
+    if [ ! -z "$ETH0_IP" ]; then
+        echo "Running iperf3 test on eth0..."
+        if iperf3 -c $IPERF_SERVER_IP -B $ETH0_IP -t 5; then
+            echo "iperf3 test PASSED on eth0"
+            ETH0_TEST_PASSED=true
+        else
+            echo "iperf3 test FAILED on eth0"
+        fi
+    else
+        echo "Skipping iperf3 test on eth0 - No IP assigned"
+    fi
 else
     echo "eth0 is DOWN or missing"
 fi
 
 # Check eth1
 if ip link show eth1 2>/dev/null | grep -q "state UP"; then
-    echo "eth1 is UP"
-    ETH1_TEST_PASSED=true
+    ETH1_IP=$(ip addr show eth1 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)
+    echo "eth1 is UP with IP: ${ETH1_IP:-No IP assigned}"
+    if [ ! -z "$ETH1_IP" ]; then
+        echo "Running iperf3 test on eth1..."
+        if iperf3 -c $IPERF_SERVER_IP -B $ETH1_IP -t 5; then
+            echo "iperf3 test PASSED on eth1"
+            ETH1_TEST_PASSED=true
+        else
+            echo "iperf3 test FAILED on eth1"
+        fi
+    else
+        echo "Skipping iperf3 test on eth1 - No IP assigned"
+    fi
 else
     echo "eth1 is DOWN or missing"
 fi
