@@ -1,7 +1,13 @@
+"""
+6/18 - minor fix (init press_time to None before the loop) : jpandya
+"""
+
 import gpiod
 import time
 import subprocess
 from datetime import datetime
+
+
 
 # NMEA device user button is wired to GPIO19
 CHIP_NAME = "gpiochip0"
