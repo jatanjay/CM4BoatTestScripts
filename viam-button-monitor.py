@@ -1,5 +1,6 @@
 """
 6/18 - minor fix (init press_time to None before the loop) : jpandya
+6/20 - timeout seconds increased to 20
 """
 
 import gpiod
@@ -12,6 +13,9 @@ from datetime import datetime
 # NMEA device user button is wired to GPIO19
 CHIP_NAME = "gpiochip0"
 LINE_OFFSET = 19  # GPIO pin number, GPIO19
+
+
+time_out_sec = 20
 
 # Enable pull-up on the pin
 def enable_pull_up(pin):
@@ -58,7 +62,7 @@ def main():
 
     try:
         while True:
-            if line.event_wait(sec=10):
+            if line.event_wait(sec=time_out_sec):
                 evt = line.event_read()
                 evt_time = datetime.now()
 
